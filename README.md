@@ -1,4 +1,16 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Deep Work Tracker
+
+**Track what matters.**  
+A minimalist web app to help you structure and measure your deep work sessions.
+
+## Features
+
+- 🎯 **Focus Sessions** – Start and stop deep work sessions with a customizable timer.
+- ⏸️ **Pause/Resume** – Pause and resume your focus sessions as needed.
+- 🔥 **Streak Counter** – Track your daily focus session streaks.
+- 📊 **Statistics** – Visualize your progress with weekly bar charts and session distribution pie charts.
+- 💾 **Local Persistence** – Data is stored in LocalStorage, so your progress remains after reloads.
+- 🖤 **Minimalist Design** – Clean, modern UI with circular timer and smooth animations.
 
 ## Getting Started
 
@@ -16,9 +28,17 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## About
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+A minimalist web app to time and track deep work sessions to increase clarity and motivation in daily work through transparent deep work statistics.
+
+## Tech Stack
+
+- **Next.js** - React framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Utility-first CSS framework
+- **LocalStorage** - Client-side data persistence
+- **SVG** - Custom circular timer and pie chart visualizations
 
 ## Learn More
 
