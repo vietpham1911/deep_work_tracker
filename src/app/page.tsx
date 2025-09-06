@@ -16,6 +16,7 @@ interface ChartData {
 
 export default function Home() {
   const [minutes, setMinutes] = useState<number>(25);
+  const [seconds, setSeconds] = useState<number>(0);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
@@ -24,6 +25,15 @@ export default function Home() {
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [dailyGoal, setDailyGoal] = useState<number>(120); // Default: 2 Stunden
   const [streak, setStreak] = useState<number>(0);
+  
+  // Pause Timer States
+  const [isPauseTimer, setIsPauseTimer] = useState<boolean>(false);
+  const [pauseMinutes, setPauseMinutes] = useState<number>(5);
+  const [pauseSeconds, setPauseSeconds] = useState<number>(0);
+  const [pauseTimeLeft, setPauseTimeLeft] = useState<number>(0);
+  const [isPausePaused, setIsPausePaused] = useState<boolean>(false);
+  
+  
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // LocalStorage Funktionen
@@ -87,14 +97,37 @@ export default function Home() {
     return 0;
   };
 
-  // Sessions, Tagesziel und Streak beim ersten Laden aus LocalStorage laden
+  // Pause Timer LocalStorage Funktionen
+  const savePauseSettingsToStorage = (pauseMin: number, pauseSec: number) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pauseMinutes', pauseMin.toString());
+      localStorage.setItem('pauseSeconds', pauseSec.toString());
+    }
+  };
+
+  const loadPauseSettingsFromStorage = (): { minutes: number; seconds: number } => {
+    if (typeof window !== 'undefined') {
+      const storedMinutes = localStorage.getItem('pauseMinutes');
+      const storedSeconds = localStorage.getItem('pauseSeconds');
+      return {
+        minutes: storedMinutes ? parseInt(storedMinutes) : 5,
+        seconds: storedSeconds ? parseInt(storedSeconds) : 0
+      };
+    }
+    return { minutes: 5, seconds: 0 };
+  };
+
+  // Sessions, Tagesziel, Streak und Pause Settings beim ersten Laden aus LocalStorage laden
   useEffect(() => {
     const sessions = loadSessionsFromStorage();
     const goal = loadDailyGoalFromStorage();
     const currentStreak = loadStreakFromStorage();
+    const pauseSettings = loadPauseSettingsFromStorage();
     setTimerSessions(sessions);
     setDailyGoal(goal);
     setStreak(currentStreak);
+    setPauseMinutes(pauseSettings.minutes);
+    setPauseSeconds(pauseSettings.seconds);
   }, []);
 
   // Chart-Daten aktualisieren wenn sich Sessions ändern
@@ -176,7 +209,7 @@ export default function Home() {
     }
   };
 
-  // Timer-Logik
+  // Focus Timer-Logik
   useEffect(() => {
     if (isRunning && !isPaused && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
@@ -185,7 +218,9 @@ export default function Home() {
             setIsRunning(false);
             setIsPaused(false);
             playBellSound();
-            saveCompletedSession(minutes);
+            saveCompletedSession(Math.round((minutes * 60 + seconds) / 60));
+            // Starte Pause Timer automatisch
+            startPauseTimer();
             return 0;
           }
           return prev - 1;
@@ -205,30 +240,74 @@ export default function Home() {
     };
   }, [isRunning, isPaused, timeLeft, minutes]);
 
-  // Klingelgeräusch mit Web Audio API
+  // Pause Timer-Logik
+  useEffect(() => {
+    if (isPauseTimer && !isPausePaused && pauseTimeLeft > 0) {
+      intervalRef.current = setInterval(() => {
+        setPauseTimeLeft((prev) => {
+          if (prev <= 1) {
+            setIsPauseTimer(false);
+            setIsPausePaused(false);
+            playBellSound();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [isPauseTimer, isPausePaused, pauseTimeLeft]);
+
+  // Apple-style "Ding" Sound mit Web Audio API
   const playBellSound = () => {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
+    
+    // Erstelle zwei Oszillatoren für einen reicheren Klang
+    const oscillator1 = audioContext.createOscillator();
+    const oscillator2 = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
 
-    oscillator.connect(gainNode);
+    // Verbinde die Oszillatoren
+    oscillator1.connect(filter);
+    oscillator2.connect(filter);
+    filter.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+    // Höhere Apple-ähnliche Frequenzen (E5 und G#5)
+    oscillator1.frequency.setValueAtTime(659.25, audioContext.currentTime); // E5
+    oscillator2.frequency.setValueAtTime(830.61, audioContext.currentTime); // G#5
 
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    // Filter für weicheren Klang
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3000, audioContext.currentTime);
 
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.5);
+    // Sanfter Anstieg und Abfall
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.03);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+
+    oscillator1.start(audioContext.currentTime);
+    oscillator2.start(audioContext.currentTime);
+    oscillator1.stop(audioContext.currentTime + 0.6);
+    oscillator2.stop(audioContext.currentTime + 0.6);
   };
 
-  // Timer starten
+  // Focus Timer Funktionen
   const startTimer = () => {
-    if (minutes > 0 && !isRunning) {
-      setTimeLeft(minutes * 60);
+    const totalSeconds = minutes * 60 + seconds;
+    if (totalSeconds > 0 && !isRunning) {
+      setTimeLeft(totalSeconds);
       setIsRunning(true);
       setIsPaused(false);
     }
@@ -242,11 +321,40 @@ export default function Home() {
     setIsPaused(false);
   };
 
-  // Timer stoppen
   const stopTimer = () => {
     setIsRunning(false);
     setIsPaused(false);
     setTimeLeft(0);
+  };
+
+  // Pause Timer Funktionen
+  const startPauseTimer = () => {
+    const totalPauseSeconds = pauseMinutes * 60 + pauseSeconds;
+    if (totalPauseSeconds > 0) {
+      setPauseTimeLeft(totalPauseSeconds);
+      setIsPauseTimer(true);
+      setIsPausePaused(false);
+    }
+  };
+
+  const pausePauseTimer = () => {
+    setIsPausePaused(true);
+  };
+
+  const resumePauseTimer = () => {
+    setIsPausePaused(false);
+  };
+
+  const stopPauseTimer = () => {
+    setIsPauseTimer(false);
+    setIsPausePaused(false);
+    setPauseTimeLeft(0);
+  };
+
+  const updatePauseSettings = (newMinutes: number, newSeconds: number) => {
+    setPauseMinutes(newMinutes);
+    setPauseSeconds(newSeconds);
+    savePauseSettingsToStorage(newMinutes, newSeconds);
   };
 
   // Zeit in mm:ss Format umwandeln
@@ -295,7 +403,7 @@ export default function Home() {
   };
 
   const weekData = getWeekData();
-  const maxMinutes = Math.max(...weekData.map(d => d.totalMinutes), 1);
+  const maxMinutes = Math.max(...weekData.map(d => d.totalMinutes), dailyGoal, 1);
 
   // Datum Range für gewählte Woche
   const getWeekRange = () => {
@@ -345,128 +453,254 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Main Grid */}
-        <div className="grid lg:grid-cols-2 gap-8 mb-12">
+        {/* Main Grid - Three Columns */}
+        <div className="grid lg:grid-cols-3 gap-6 mb-12">
           
-          {/* Timer Card */}
-          <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-8 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
-            <div className="text-center">
-
-              <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Focus Session</h2>
-              <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Start a concentrated work phase</p>
-              
-              {/* Streak Counter */}
-              <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-full border border-orange-200 mb-6">
-                <div className="text-orange-500 text-lg">🔥</div>
-                <span className="text-sm font-semibold text-orange-700">
-                  {streak} day{streak !== 1 ? 's' : ''} streak
-                </span>
+          {/* Settings Card - Left */}
+          <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-6 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Settings</h2>
+                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Configure your timers</p>
               </div>
 
-
-              {!isRunning ? (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-3">
-                      Session Duration
-                    </label>
-                    <div className="flex items-center justify-center">
+              {/* Streak Counter with Inline Goal Setting */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-bold">{streak}</span>
+                    </div>
+                    <div className="text-sm font-medium text-slate-700">Day Streak</div>
+                    <div className="flex flex-col items-center">
                       <input
                         type="number"
                         min="1"
-                        max="999"
-                        value={minutes}
-                        onChange={(e) => setMinutes(Math.max(1, Math.min(999, Number(e.target.value) || 1)))}
-                        className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums min-w-[120px] text-center bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-300 rounded-lg px-2 py-1 transition-all duration-200"
+                        max="480"
+                        value={dailyGoal}
+                        onChange={(e) => updateDailyGoal(Math.max(1, Math.min(480, Number(e.target.value) || 1)))}
+                        className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5"
                       />
+                      <span className="text-xs text-slate-500">min</span>
                     </div>
                   </div>
-                  
-                  <button
-                    onClick={startTimer}
-                    className="w-full bg-gradient-to-r from-slate-800 to-slate-900 hover:brightness-90 text-white py-4 px-8 rounded-2xl font-semibold text-lg transition-all shadow-lg hover:shadow-xl"
-                  >
-                    Start Session
-                  </button>
                 </div>
-              ) : (
-                <div className="space-y-8">
-                  {/* Circular Timer */}
-                  <div className="flex flex-col items-center">
-                    <div className="relative w-48 h-48 mb-6">
-                      {/* Background Circle */}
-                      <svg className="w-48 h-48 transform -rotate-90" viewBox="0 0 100 100">
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke="rgb(226 232 240)"
-                          strokeWidth="8"
+              </div>
+
+              {/* Focus Duration Settings */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center space-x-4">
+                    <div className="text-sm font-medium text-slate-700">Focus Duration</div>
+                    <div className="flex items-center space-x-3">
+                      <div className="flex flex-col items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="999"
+                          value={minutes}
+                          onChange={(e) => setMinutes(Math.max(0, Math.min(999, Number(e.target.value) || 0)))}
+                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3"
                         />
-                        {/* Progress Circle */}
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke="rgb(59 130 246)"
-                          strokeWidth="8"
-                          strokeLinecap="round"
-                          strokeDasharray={`${2 * Math.PI * 45}`}
-                          strokeDashoffset={`${2 * Math.PI * 45 * (timeLeft / (minutes * 60))}`}
-                          className="transition-all duration-1000"
+                        <span className="text-xs text-slate-500">min</span>
+                      </div>
+                      <span className="text-lg text-slate-400 font-bold">:</span>
+                      <div className="flex flex-col items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={seconds}
+                          onChange={(e) => setSeconds(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3"
                         />
-                      </svg>
-                      
-                      {/* Timer Text in Center */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <div className={`text-3xl font-bold tabular-nums text-slate-900 ${isPaused ? '' : 'animate-pulse'}`}>
-                          {formatTime(timeLeft)}
-                        </div>
-                        <div className="text-sm text-slate-600 mt-1">
-                          {isPaused ? 'Paused' : 'Focus Time'}
-                        </div>
+                        <span className="text-xs text-slate-500">sec</span>
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Control Buttons */}
-                  <div className="flex gap-3">
-                    {!isPaused ? (
-                      <button
-                        onClick={pauseTimer}
-                        className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
-                      >
-                        Pause
-                      </button>
-                    ) : (
-                      <button
-                        onClick={resumeTimer}
-                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
-                      >
-                        Resume
-                      </button>
-                    )}
-                    
-                    <button
-                      onClick={stopTimer}
-                      className="flex-1 bg-slate-600 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
-                    >
-                      End Session
-                    </button>
+                </div>
+              </div>
+
+              {/* Break Duration Settings */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center space-x-4">
+                    <div className="text-sm font-medium text-slate-700">Break Duration</div>
+                    <div className="flex items-center space-x-3">
+                      <div className="flex flex-col items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="60"
+                          value={pauseMinutes}
+                          onChange={(e) => updatePauseSettings(Math.max(0, Math.min(60, Number(e.target.value) || 0)), pauseSeconds)}
+                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3"
+                        />
+                        <span className="text-xs text-slate-500">min</span>
+                      </div>
+                      <span className="text-lg text-slate-400 font-bold">:</span>
+                      <div className="flex flex-col items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={pauseSeconds}
+                          onChange={(e) => updatePauseSettings(pauseMinutes, Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3"
+                        />
+                        <span className="text-xs text-slate-500">sec</span>
+                      </div>
+                    </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Timer Card - Middle */}
+          <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-6 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
+            <div className="text-center space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Timer</h2>
+                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Focus & Break Sessions</p>
+              </div>
+
+              {/* Circular Timer */}
+              <div className="flex flex-col items-center">
+                <div className="relative w-64 h-64 mb-6">
+                  {/* Background Circle */}
+                  <svg className="w-64 h-64 transform -rotate-90" viewBox="0 0 100 100">
+                    <defs>
+                      <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#6366f1" />
+                      </linearGradient>
+                    </defs>
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke="rgb(226 232 240)"
+                      strokeWidth="8"
+                    />
+                    {/* Progress Circle */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke={isPauseTimer ? "rgb(34 197 94)" : "url(#timerGradient)"}
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 45}`}
+                      strokeDashoffset={`${2 * Math.PI * 45 * ((isPauseTimer ? pauseTimeLeft : timeLeft) / (isPauseTimer ? (pauseMinutes * 60 + pauseSeconds) : (minutes * 60 + seconds)))}`}
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                  
+                  {/* Timer Content in Center */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    {!isRunning && !isPauseTimer ? (
+                      /* Ready Mode */
+                      <div className="space-y-2">
+                        <div className="text-2xl font-bold text-slate-900">Ready</div>
+                        <div className="text-sm text-slate-600">Start your session</div>
+                      </div>
+                    ) : isPauseTimer ? (
+                      /* Pause Timer Mode */
+                      <div className="space-y-2">
+                        <div className={`text-4xl font-bold tabular-nums text-green-600 ${!isPausePaused ? 'animate-pulse' : ''}`}>
+                          {formatTime(pauseTimeLeft)}
+                        </div>
+                        <div className="text-sm text-green-600">
+                          {isPausePaused ? 'Paused' : 'Break Time'}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Focus Timer Running Mode */
+                      <div className="space-y-2">
+                        <div className={`text-4xl font-bold tabular-nums text-slate-900 ${!isPaused ? 'animate-pulse' : ''}`}>
+                          {formatTime(timeLeft)}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {isPaused ? 'Paused' : 'Focus Time'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Control Buttons */}
+              {!isRunning && !isPauseTimer ? (
+                <button
+                  onClick={startTimer}
+                  className="w-full bg-gradient-to-r from-slate-800 to-slate-900 hover:brightness-90 text-white py-4 px-8 rounded-2xl font-semibold text-lg transition-all shadow-lg hover:shadow-xl"
+                >
+                  Start Session
+                </button>
+              ) : isPauseTimer ? (
+                <div className="flex gap-3">
+                  {!isPausePaused ? (
+                    <button
+                      onClick={pausePauseTimer}
+                      className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                    >
+                      Pause
+                    </button>
+                  ) : (
+                    <button
+                      onClick={resumePauseTimer}
+                      className="flex-1 bg-green-500 hover:bg-green-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                    >
+                      Resume
+                    </button>
+                  )}
+                  
+                  <button
+                    onClick={stopPauseTimer}
+                    className="flex-1 bg-slate-600 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                  >
+                    End Break
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  {!isPaused ? (
+                    <button
+                      onClick={pauseTimer}
+                      className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                    >
+                      Pause
+                    </button>
+                  ) : (
+                    <button
+                      onClick={resumeTimer}
+                      className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                    >
+                      Resume
+                    </button>
+                  )}
+                  
+                  <button
+                    onClick={stopTimer}
+                    className="flex-1 bg-slate-600 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                  >
+                    End Session
+                  </button>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Stats Card */}
+          {/* Stats Card - Right */}
           <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-6 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
             <div className="space-y-6">
               {/* Header */}
               <div className="text-center">
-                <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent mb-6 group-hover:from-indigo-900 group-hover:to-blue-900 transition-all duration-300">Statistics</h2>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Statistics</h2>
+                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Track your progress</p>
               </div>
 
 
@@ -512,52 +746,41 @@ export default function Home() {
                         {/* Modern Tooltip */}
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 text-white text-sm rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-20 shadow-lg">
                           <div className="font-medium">{day.totalMinutes}min on {getDayName(index)}</div>
+                          <div className="text-xs text-slate-300 mt-1">Goal: {dailyGoal}min</div>
                           {day.sessionsCount > 0 && (
                             <div className="text-xs text-slate-300 mt-1">{day.sessionsCount} session{day.sessionsCount > 1 ? 's' : ''}</div>
                           )}
                           {/* Tooltip Arrow */}
                           <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
                         </div>
+                        
+                        {/* Goal Line */}
+                        <div 
+                          className="absolute w-full border-t-2 border-dashed border-indigo-300 opacity-60"
+                          style={{ 
+                            bottom: `${(dailyGoal / maxMinutes) * 100}%`,
+                            height: '2px'
+                          }}
+                        ></div>
+                        
                         {day.totalMinutes > 0 && (
-                          <>
-                            {/* Long sessions (top) */}
-                            {day.longMinutes > 0 && (
-                              <div 
-                                className="bg-gradient-to-t from-orange-400 to-amber-300 w-full absolute bottom-0 rounded-t-full transition-all duration-300 hover:brightness-90"
-                                style={{ 
-                                  height: `${(day.longMinutes / maxMinutes) * 100}%`,
-                                  bottom: `${((day.shortMinutes + day.mediumMinutes) / maxMinutes) * 100}%`
-                                }}
-                              ></div>
-                            )}
-                            {/* Medium sessions (middle) */}
-                            {day.mediumMinutes > 0 && (
-                              <div 
-                                className="bg-gradient-to-t from-emerald-400 to-green-300 w-full absolute bottom-0 transition-all duration-300 hover:brightness-90"
-                                style={{ 
-                                  height: `${(day.mediumMinutes / maxMinutes) * 100}%`,
-                                  bottom: `${(day.shortMinutes / maxMinutes) * 100}%`
-                                }}
-                              ></div>
-                            )}
-                            {/* Short sessions (bottom) */}
-                            {day.shortMinutes > 0 && (
-                              <div 
-                                className="bg-gradient-to-t from-blue-400 to-indigo-300 w-full absolute bottom-0 rounded-b-full transition-all duration-300 hover:brightness-90"
-                                style={{ height: `${(day.shortMinutes / maxMinutes) * 100}%` }}
-                              ></div>
-                            )}
-                          </>
+                          <div 
+                            className="bg-indigo-500 w-full absolute bottom-0 transition-all duration-300 hover:brightness-90"
+                            style={{ height: `${(day.totalMinutes / maxMinutes) * 100}%` }}
+                          ></div>
                         )}
                       </div>
-                      {/* Day label with goal indicator */}
+                      {/* Day label with time and goal indicator */}
                       <div className="flex flex-col items-center space-y-1">
                         <span className="text-xs text-slate-600 font-medium group-hover/bar:text-slate-800 transition-all duration-200">{day.day}</span>
+                        <div className="text-xs text-slate-500 font-medium group-hover/bar:text-slate-700 transition-all duration-200">
+                          {day.totalMinutes}min
+                        </div>
                         <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-200 ${
                           day.sessionsCount >= 3
-                            ? 'bg-green-100 text-green-700 group-hover/bar:bg-green-200' 
+                            ? 'bg-indigo-100 text-indigo-700 group-hover/bar:bg-indigo-200' 
                             : day.sessionsCount >= 1 
-                              ? 'bg-blue-100 text-blue-700 group-hover/bar:bg-blue-200'
+                              ? 'bg-indigo-100 text-indigo-700 group-hover/bar:bg-indigo-200'
                               : 'bg-slate-100 text-slate-500 group-hover/bar:bg-slate-200'
                         }`}>
                           {day.sessionsCount >= 3 ? '✓' : day.sessionsCount > 0 ? day.sessionsCount : '0'}
@@ -569,79 +792,6 @@ export default function Home() {
 
               </div>
 
-              {/* Kreisdiagramm */}
-              <div className="mt-8">
-                <div className="flex items-center justify-center">
-                  <div className="relative w-48 h-48">
-                    <svg className="w-48 h-48 transform -rotate-90" viewBox="0 0 100 100">
-                      {(() => {
-                        const pieData = getPieChartData();
-                        let cumulativePercentage = 0;
-                        
-                        return pieData.map((segment, index) => {
-                          const startAngle = (cumulativePercentage / 100) * 360;
-                          const endAngle = ((cumulativePercentage + segment.percentage) / 100) * 360;
-                          const radius = 45;
-                          const centerX = 50;
-                          const centerY = 50;
-                          
-                          const startAngleRad = (startAngle * Math.PI) / 180;
-                          const endAngleRad = (endAngle * Math.PI) / 180;
-                          
-                          const x1 = centerX + radius * Math.cos(startAngleRad);
-                          const y1 = centerY + radius * Math.sin(startAngleRad);
-                          const x2 = centerX + radius * Math.cos(endAngleRad);
-                          const y2 = centerY + radius * Math.sin(endAngleRad);
-                          
-                          const largeArcFlag = segment.percentage > 50 ? 1 : 0;
-                          
-                          const pathData = [
-                            `M ${centerX} ${centerY}`,
-                            `L ${x1} ${y1}`,
-                            `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
-                            'Z'
-                          ].join(' ');
-                          
-                          cumulativePercentage += segment.percentage;
-                          
-                          return (
-                            <path
-                              key={index}
-                              d={pathData}
-                              fill={segment.color}
-                              className="transition-all duration-300 hover:brightness-110 cursor-pointer"
-                              style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' }}
-                            />
-                          );
-                        });
-                      })()}
-                      
-                      {/* Fallback: Leerer Kreis wenn keine Daten */}
-                      {timerSessions.length === 0 && (
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke="#E5E7EB"
-                          strokeWidth="8"
-                          className="transition-all duration-300"
-                        />
-                      )}
-                    </svg>
-                    
-                    {/* Center Text */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <div className="text-2xl font-bold text-slate-800">
-                        {timerSessions.length}
-                      </div>
-                      <div className="text-sm text-slate-600">
-                        Total Sessions
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
             </div>
           </div>
