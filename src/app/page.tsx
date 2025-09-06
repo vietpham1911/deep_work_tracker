@@ -24,6 +24,7 @@ export default function Home() {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [dailyGoal, setDailyGoal] = useState<number>(120); // Default: 2 Stunden
+  const [goalSeconds, setGoalSeconds] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
   
   // Pause Timer States
@@ -123,8 +124,10 @@ export default function Home() {
     const goal = loadDailyGoalFromStorage();
     const currentStreak = loadStreakFromStorage();
     const pauseSettings = loadPauseSettingsFromStorage();
+    const goalSecs = typeof window !== 'undefined' ? parseInt(localStorage.getItem('goalSeconds') || '0') : 0;
     setTimerSessions(sessions);
     setDailyGoal(goal);
+    setGoalSeconds(goalSecs);
     setStreak(currentStreak);
     setPauseMinutes(pauseSettings.minutes);
     setPauseSeconds(pauseSettings.seconds);
@@ -209,7 +212,7 @@ export default function Home() {
     }
   };
 
-  // Focus Timer-Logik
+  // Deep Work Timer-Logik
   useEffect(() => {
     if (isRunning && !isPaused && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
@@ -218,7 +221,11 @@ export default function Home() {
             setIsRunning(false);
             setIsPaused(false);
             playBellSound();
-            saveCompletedSession(Math.round((minutes * 60 + seconds) / 60));
+            // Calculate actual completed time in minutes
+            const totalSessionSeconds = minutes * 60 + seconds;
+            const completedSeconds = totalSessionSeconds - timeLeft;
+            const completedMinutes = Math.round(completedSeconds / 60);
+            saveCompletedSession(completedMinutes);
             // Starte Pause Timer automatisch
             startPauseTimer();
             return 0;
@@ -303,7 +310,7 @@ export default function Home() {
     oscillator2.stop(audioContext.currentTime + 0.6);
   };
 
-  // Focus Timer Funktionen
+  // Deep Work Timer Funktionen
   const startTimer = () => {
     const totalSeconds = minutes * 60 + seconds;
     if (totalSeconds > 0 && !isRunning) {
@@ -434,6 +441,15 @@ export default function Home() {
     saveDailyGoalToStorage(newGoal);
   };
 
+  const updateGoalSettings = (newMinutes: number, newSeconds: number) => {
+    setDailyGoal(newMinutes);
+    setGoalSeconds(newSeconds);
+    saveDailyGoalToStorage(newMinutes);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('goalSeconds', newSeconds.toString());
+    }
+  };
+
   const getDayName = (dayIndex: number): string => {
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     return dayNames[dayIndex];
@@ -459,39 +475,15 @@ export default function Home() {
           {/* Settings Card - Left */}
           <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-6 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
             <div className="space-y-6">
-              <div className="text-center">
+            <div className="text-center">
                 <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Settings</h2>
-                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Configure your timers</p>
               </div>
 
-              {/* Streak Counter with Inline Goal Setting */}
-              <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
-                <div className="flex items-center justify-center">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm font-bold">{streak}</span>
-                    </div>
-                    <div className="text-sm font-medium text-slate-700">Day Streak</div>
-                    <div className="flex flex-col items-center">
-                      <input
-                        type="number"
-                        min="1"
-                        max="480"
-                        value={dailyGoal}
-                        onChange={(e) => updateDailyGoal(Math.max(1, Math.min(480, Number(e.target.value) || 1)))}
-                        className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5"
-                      />
-                      <span className="text-xs text-slate-500">min</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Focus Duration Settings */}
+              {/* Deep Work Duration Settings */}
               <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
                 <div className="flex items-center justify-center">
                   <div className="flex items-center space-x-4">
-                    <div className="text-sm font-medium text-slate-700">Focus Duration</div>
+                    <div className="text-sm font-medium text-slate-700">Deep Work Duration</div>
                     <div className="flex items-center space-x-3">
                       <div className="flex flex-col items-center">
                         <input
@@ -500,9 +492,8 @@ export default function Home() {
                           max="999"
                           value={minutes}
                           onChange={(e) => setMinutes(Math.max(0, Math.min(999, Number(e.target.value) || 0)))}
-                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3"
+                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <span className="text-xs text-slate-500">min</span>
                       </div>
                       <span className="text-lg text-slate-400 font-bold">:</span>
                       <div className="flex flex-col items-center">
@@ -512,15 +503,14 @@ export default function Home() {
                           max="59"
                           value={seconds}
                           onChange={(e) => setSeconds(Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
-                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3"
+                          className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <span className="text-xs text-slate-500">sec</span>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
+                    </div>
+                  </div>
+                  
               {/* Break Duration Settings */}
               <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
                 <div className="flex items-center justify-center">
@@ -534,9 +524,8 @@ export default function Home() {
                           max="60"
                           value={pauseMinutes}
                           onChange={(e) => updatePauseSettings(Math.max(0, Math.min(60, Number(e.target.value) || 0)), pauseSeconds)}
-                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3"
+                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <span className="text-xs text-slate-500">min</span>
                       </div>
                       <span className="text-lg text-slate-400 font-bold">:</span>
                       <div className="flex flex-col items-center">
@@ -546,10 +535,42 @@ export default function Home() {
                           max="59"
                           value={pauseSeconds}
                           onChange={(e) => updatePauseSettings(pauseMinutes, Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
-                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3"
+                          className="text-lg font-bold bg-gradient-to-r from-slate-700 to-slate-800 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <span className="text-xs text-slate-500">sec</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Day Streak Goal Settings */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl px-6 py-4 border border-white/30 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">Day Streak</div>
+                    <div className="text-sm font-medium text-slate-700">Goal</div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="flex flex-col items-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="480"
+                        value={dailyGoal}
+                        onChange={(e) => updateGoalSettings(Math.max(0, Math.min(480, Number(e.target.value) || 0)), goalSeconds)}
+                        className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                    <span className="text-lg text-slate-400 font-bold">:</span>
+                    <div className="flex flex-col items-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={goalSeconds}
+                        onChange={(e) => updateGoalSettings(dailyGoal, Math.max(0, Math.min(59, Number(e.target.value) || 0)))}
+                        className="text-lg font-bold bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent tabular-nums w-12 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-0.5 ml-3 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
                     </div>
                   </div>
                 </div>
@@ -562,55 +583,53 @@ export default function Home() {
             <div className="text-center space-y-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Timer</h2>
-                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Focus & Break Sessions</p>
               </div>
 
-              {/* Circular Timer */}
-              <div className="flex flex-col items-center">
-                <div className="relative w-64 h-64 mb-6">
-                  {/* Background Circle */}
-                  <svg className="w-64 h-64 transform -rotate-90" viewBox="0 0 100 100">
+                  {/* Circular Timer */}
+                  <div className="flex flex-col items-center">
+                <div className="relative w-48 h-48 mb-4">
+                      {/* Background Circle */}
+                      <svg className="w-48 h-48 transform -rotate-90" viewBox="0 0 100 100">
                     <defs>
                       <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                         <stop offset="0%" stopColor="#3b82f6" />
                         <stop offset="100%" stopColor="#6366f1" />
                       </linearGradient>
                     </defs>
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="45"
-                      fill="none"
-                      stroke="rgb(226 232 240)"
-                      strokeWidth="8"
-                    />
-                    {/* Progress Circle */}
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="45"
-                      fill="none"
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="45"
+                          fill="none"
+                          stroke="rgb(226 232 240)"
+                          strokeWidth="8"
+                        />
+                        {/* Progress Circle */}
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="45"
+                          fill="none"
                       stroke={isPauseTimer ? "rgb(34 197 94)" : "url(#timerGradient)"}
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 45}`}
+                          strokeWidth="8"
+                          strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 45}`}
                       strokeDashoffset={`${2 * Math.PI * 45 * ((isPauseTimer ? pauseTimeLeft : timeLeft) / (isPauseTimer ? (pauseMinutes * 60 + pauseSeconds) : (minutes * 60 + seconds)))}`}
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  
+                          className="transition-all duration-1000"
+                        />
+                      </svg>
+                      
                   {/* Timer Content in Center */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
                     {!isRunning && !isPauseTimer ? (
                       /* Ready Mode */
                       <div className="space-y-2">
-                        <div className="text-2xl font-bold text-slate-900">Ready</div>
-                        <div className="text-sm text-slate-600">Start your session</div>
+                        <div className="text-xl font-bold text-slate-900">Ready</div>
                       </div>
                     ) : isPauseTimer ? (
                       /* Pause Timer Mode */
                       <div className="space-y-2">
-                        <div className={`text-4xl font-bold tabular-nums text-green-600 ${!isPausePaused ? 'animate-pulse' : ''}`}>
+                        <div className={`text-3xl font-bold tabular-nums text-green-600 ${!isPausePaused ? 'animate-pulse' : ''}`}>
                           {formatTime(pauseTimeLeft)}
                         </div>
                         <div className="text-sm text-green-600">
@@ -620,11 +639,11 @@ export default function Home() {
                     ) : (
                       /* Focus Timer Running Mode */
                       <div className="space-y-2">
-                        <div className={`text-4xl font-bold tabular-nums text-slate-900 ${!isPaused ? 'animate-pulse' : ''}`}>
+                        <div className={`text-3xl font-bold tabular-nums text-slate-900 ${!isPaused ? 'animate-pulse' : ''}`}>
                           {formatTime(timeLeft)}
                         </div>
                         <div className="text-sm text-slate-600">
-                          {isPaused ? 'Paused' : 'Focus Time'}
+                          {isPaused ? 'Paused' : 'Deep Work Time'}
                         </div>
                       </div>
                     )}
@@ -666,29 +685,29 @@ export default function Home() {
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-3">
-                  {!isPaused ? (
-                    <button
-                      onClick={pauseTimer}
-                      className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
-                    >
-                      Pause
-                    </button>
-                  ) : (
-                    <button
-                      onClick={resumeTimer}
+                  <div className="flex gap-3">
+                    {!isPaused ? (
+                      <button
+                        onClick={pauseTimer}
+                        className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                      >
+                        Pause
+                      </button>
+                    ) : (
+                      <button
+                        onClick={resumeTimer}
                       className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
+                      >
+                        Resume
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={stopTimer}
+                      className="flex-1 bg-slate-600 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
                     >
-                      Resume
+                      End Session
                     </button>
-                  )}
-                  
-                  <button
-                    onClick={stopTimer}
-                    className="flex-1 bg-slate-600 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg transition-all shadow-sm hover:shadow-md"
-                  >
-                    End Session
-                  </button>
                 </div>
               )}
             </div>
@@ -699,8 +718,7 @@ export default function Home() {
             <div className="space-y-6">
               {/* Header */}
               <div className="text-center">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Statistics</h2>
-                <p className="text-slate-600 mb-4 group-hover:text-slate-700 transition-colors duration-200">Track your progress</p>
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-indigo-900 transition-colors duration-200">Calendar</h2>
               </div>
 
 
@@ -738,53 +756,38 @@ export default function Home() {
                 {/* Chart */}
                 <div className="flex items-end justify-between h-48 px-4">
                   {weekData.map((day, index) => (
-                    <div key={index} className="flex flex-col items-center space-y-2 flex-1 group/bar">
+                    <div key={index} className="flex flex-col items-center space-y-2 flex-1 relative group/bar">
                       {/* Bar */}
-                      <div className="w-8 bg-gradient-to-t from-slate-200 to-slate-100 rounded-full overflow-hidden relative shadow-inner hover:from-slate-300 hover:to-slate-200 transition-all duration-300 group/tooltip" 
+                      <div className="w-8 bg-gradient-to-t from-slate-200 to-slate-100 rounded-full overflow-hidden relative shadow-inner hover:from-slate-300 hover:to-slate-200 transition-all duration-300" 
                            style={{ height: '140px' }}>
-                        
-                        {/* Modern Tooltip */}
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 text-white text-sm rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-20 shadow-lg">
-                          <div className="font-medium">{day.totalMinutes}min on {getDayName(index)}</div>
-                          <div className="text-xs text-slate-300 mt-1">Goal: {dailyGoal}min</div>
-                          {day.sessionsCount > 0 && (
-                            <div className="text-xs text-slate-300 mt-1">{day.sessionsCount} session{day.sessionsCount > 1 ? 's' : ''}</div>
-                          )}
-                          {/* Tooltip Arrow */}
-                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                        </div>
                         
                         {/* Goal Line */}
                         <div 
                           className="absolute w-full border-t-2 border-dashed border-indigo-300 opacity-60"
-                          style={{ 
+                                style={{ 
                             bottom: `${(dailyGoal / maxMinutes) * 100}%`,
                             height: '2px'
-                          }}
-                        ></div>
+                                }}
+                              ></div>
                         
                         {day.totalMinutes > 0 && (
                           <div 
                             className="bg-indigo-500 w-full absolute bottom-0 transition-all duration-300 hover:brightness-90"
                             style={{ height: `${(day.totalMinutes / maxMinutes) * 100}%` }}
-                          ></div>
+                              ></div>
                         )}
                       </div>
-                      {/* Day label with time and goal indicator */}
-                      <div className="flex flex-col items-center space-y-1">
+                      
+                      {/* Individual Bar Tooltip */}
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 text-white text-sm rounded-lg opacity-0 group-hover/bar:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-20 shadow-lg">
+                        <div className="font-medium">{day.totalMinutes}min</div>
+                        {/* Tooltip Arrow */}
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                      </div>
+                      
+                      {/* Day label */}
+                      <div className="flex flex-col items-center">
                         <span className="text-xs text-slate-600 font-medium group-hover/bar:text-slate-800 transition-all duration-200">{day.day}</span>
-                        <div className="text-xs text-slate-500 font-medium group-hover/bar:text-slate-700 transition-all duration-200">
-                          {day.totalMinutes}min
-                        </div>
-                        <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-200 ${
-                          day.sessionsCount >= 3
-                            ? 'bg-indigo-100 text-indigo-700 group-hover/bar:bg-indigo-200' 
-                            : day.sessionsCount >= 1 
-                              ? 'bg-indigo-100 text-indigo-700 group-hover/bar:bg-indigo-200'
-                              : 'bg-slate-100 text-slate-500 group-hover/bar:bg-slate-200'
-                        }`}>
-                          {day.sessionsCount >= 3 ? '✓' : day.sessionsCount > 0 ? day.sessionsCount : '0'}
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -793,6 +796,45 @@ export default function Home() {
               </div>
 
 
+                      </div>
+                      </div>
+                    </div>
+
+        {/* Statistics Section */}
+        <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-6 shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 group">
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-slate-900 mb-4 group-hover:text-indigo-900 transition-colors duration-200">Statistics</h2>
+            </div>
+
+
+            {/* Statistics Grid */}
+            <div className="grid md:grid-cols-3 gap-6">
+              {/* Total Deep Work Time */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-sm text-center">
+                <div className="text-3xl font-bold text-slate-900 mb-2">
+                  {(() => {
+                    const totalMinutes = timerSessions.reduce((sum, session) => sum + session.minutes, 0);
+                    const hours = Math.floor(totalMinutes / 60);
+                    const minutes = totalMinutes % 60;
+                    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                  })()}
+                </div>
+                <div className="text-sm text-slate-600">Total Deep Work Time</div>
+              </div>
+
+              {/* Longest Streak */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-sm text-center">
+                <div className="text-3xl font-bold text-slate-900 mb-2">{streak}</div>
+                <div className="text-sm text-slate-600">Longest Streak</div>
+              </div>
+
+              {/* Current Streak */}
+              <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-sm text-center">
+                <div className="text-3xl font-bold text-slate-900 mb-2">{streak}</div>
+                <div className="text-sm text-slate-600">Current Streak</div>
+              </div>
             </div>
           </div>
         </div>
